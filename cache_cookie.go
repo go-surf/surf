@@ -55,7 +55,7 @@ func (c *unboundCookieCache) Bind(w http.ResponseWriter, r *http.Request) CacheS
 		secret: c.secret,
 		w:      w,
 		r:      r,
-		staged: make(map[string][]byte),
+		staged: make(map[string]cookieCacheItem),
 	}
 }
 
@@ -65,7 +65,12 @@ type cookieCache struct {
 	prefix string
 	secret cipher.Block
 
-	staged map[string][]byte
+	staged map[string]cookieCacheItem
+}
+
+type cookieCacheItem struct {
+	payload   []byte
+	validTill time.Time
 }
 
 func (s *cookieCache) Get(ctx context.Context, key string, dest interface{}) error {
@@ -73,11 +78,17 @@ func (s *cookieCache) Get(ctx context.Context, key string, dest interface{}) err
 		"key", key,
 	).Finish()
 
-	if rawVal, ok := s.staged[key]; ok {
-		if err := json.Unmarshal(rawVal, dest); err != nil {
-			return fmt.Errorf("cannot decode staged value: %s", err)
+	now := time.Now()
+
+	if item, ok := s.staged[key]; ok {
+		if item.validTill.Before(now) {
+			delete(s.staged, key)
+		} else {
+			if err := json.Unmarshal(item.payload, dest); err != nil {
+				return fmt.Errorf("cannot decode staged value: %s", err)
+			}
+			return nil
 		}
-		return nil
 	}
 
 	c, err := s.r.Cookie(s.prefix + key)
@@ -85,7 +96,7 @@ func (s *cookieCache) Get(ctx context.Context, key string, dest interface{}) err
 		return ErrMiss
 	}
 
-	// if cookie cannot be decoded or signature is invalid, ErrMiss
+	// if cookie cannot be(decoded or signature is invalid, ErrMiss
 	// is returned. User cannot deal with such issue, so no need to
 	// bother with the details
 
@@ -97,7 +108,7 @@ func (s *cookieCache) Get(ctx context.Context, key string, dest interface{}) err
 	rawPayload := rawData[:len(rawData)-4]
 	rawExp := rawData[len(rawData)-4:]
 	exp := time.Unix(int64(binary.LittleEndian.Uint32(rawExp)), 0)
-	if exp.Before(time.Now()) {
+	if !exp.After(now) {
 		s.del(key)
 		return ErrMiss
 	}
@@ -141,7 +152,12 @@ func (s *cookieCache) set(key string, value interface{}, exp time.Duration) erro
 		HttpOnly: true,
 		//Secure:   true,
 	})
-	s.staged[key] = rawPayload
+	if exp > 0 {
+		s.staged[key] = cookieCacheItem{
+			payload:   rawPayload,
+			validTill: expAt,
+		}
+	}
 	return nil
 }
 
