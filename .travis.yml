@@ -1,0 +1,11 @@
+language: go
+
+go:
+        - 1.10.x
+        - master
+
+script:
+        - go vet github.com/go-surf/surf/...
+        - go test -v -count=1 -race -timeout=90s github.com/go-surf/surf/...
+
+sudo: false
