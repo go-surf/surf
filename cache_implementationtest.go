@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-func testCache(t *testing.T, c CacheService) {
+func RunCacheImplementationTest(t *testing.T, c CacheService) {
 	ctx := context.Background()
 
 	// ensure basic operations are correct
@@ -33,7 +33,7 @@ func testCache(t *testing.T, c CacheService) {
 	if err := c.Set(ctx, "key-exp", "abc", time.Second); err != nil {
 		t.Fatalf("cannot set: %s", err)
 	}
-	time.Sleep(time.Second)
+	time.Sleep(time.Second + 20*time.Millisecond)
 	val = ""
 	if err := c.Get(ctx, "key-exp", &val); err != ErrMiss {
 		t.Fatalf("want ErrMiss, got: %+v (%q)", err, val)

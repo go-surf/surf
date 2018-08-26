@@ -15,5 +15,5 @@ func TestFilesystemCache(t *testing.T) {
 	defer os.RemoveAll(dir)
 
 	cache := NewFilesystemCache(dir)
-	testCache(t, cache)
+	RunCacheImplementationTest(t, cache)
 }

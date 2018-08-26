@@ -19,7 +19,7 @@ func TestCookieCache(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cannot create cookie cache: %s", err)
 	}
-	testCache(t, cache.Bind(w, r))
+	RunCacheImplementationTest(t, cache.Bind(w, r))
 }
 
 func TestCookieCacheBetweenRequests(t *testing.T) {
