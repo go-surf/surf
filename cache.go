@@ -2,6 +2,7 @@ package surf
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"time"
@@ -37,3 +38,31 @@ var (
 	// which cause conflict.
 	ErrConflict = errors.New("conflict")
 )
+
+// CacheMarshal returns serialized representation of given value.
+//
+// Unless given destination implements CacheMarshaler interface, JSON is used
+// to marshal the value.
+func CacheMarshal(value interface{}) ([]byte, error) {
+	if m, ok := value.(CacheMarshaler); ok {
+		return m.MarshalCache()
+	}
+	return json.Marshal(value)
+
+}
+
+// CacheUnmarshal deserialize given raw data into given destination.
+//
+// Unless given destination implements CacheMarshaler interface, JSON is used
+// to unmarshal the value.
+func CacheUnmarshal(raw []byte, dest interface{}) error {
+	if m, ok := dest.(CacheMarshaler); ok {
+		return m.UnmarshalCache(raw)
+	}
+	return json.Unmarshal(raw, dest)
+}
+
+type CacheMarshaler interface {
+	MarshalCache() ([]byte, error)
+	UnmarshalCache([]byte) error
+}

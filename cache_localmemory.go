@@ -16,7 +16,7 @@ type LocalMemCache struct {
 
 type cacheitem struct {
 	Key   string
-	Value json.RawMessage
+	Value []byte
 	ExpAt time.Time
 }
 
@@ -42,11 +42,11 @@ func (c *LocalMemCache) Get(ctx context.Context, key string, dest interface{}) e
 		delete(c.mem, key)
 		return ErrMiss
 	}
-	return json.Unmarshal(it.Value, dest)
+	return CacheUnmarshal(it.Value, dest)
 }
 
 func (c *LocalMemCache) Set(ctx context.Context, key string, value interface{}, exp time.Duration) error {
-	b, err := json.Marshal(value)
+	b, err := CacheMarshal(value)
 	if err != nil {
 		return err
 	}
@@ -74,7 +74,7 @@ func (c *LocalMemCache) SetNx(ctx context.Context, key string, value interface{}
 		}
 	}
 
-	b, err := json.Marshal(value)
+	b, err := CacheMarshal(value)
 	if err != nil {
 		return err
 	}

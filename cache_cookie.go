@@ -7,7 +7,6 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/binary"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -84,7 +83,7 @@ func (s *cookieCache) Get(ctx context.Context, key string, dest interface{}) err
 		if item.validTill.Before(now) {
 			delete(s.staged, key)
 		} else {
-			if err := json.Unmarshal(item.payload, dest); err != nil {
+			if err := CacheUnmarshal(item.payload, dest); err != nil {
 				return fmt.Errorf("cannot decode staged value: %s", err)
 			}
 			return nil
@@ -113,7 +112,7 @@ func (s *cookieCache) Get(ctx context.Context, key string, dest interface{}) err
 		return ErrMiss
 	}
 
-	if err := json.Unmarshal(rawPayload, dest); err != nil {
+	if err := CacheUnmarshal(rawPayload, dest); err != nil {
 		return fmt.Errorf("cannot deserialize value: %s", err)
 	}
 	return nil
@@ -129,7 +128,7 @@ func (s *cookieCache) Set(ctx context.Context, key string, value interface{}, ex
 }
 
 func (s *cookieCache) set(key string, value interface{}, exp time.Duration) error {
-	rawPayload, err := json.Marshal(value)
+	rawPayload, err := CacheMarshal(value)
 	if err != nil {
 		return fmt.Errorf("cannot serialize value: %s", err)
 	}

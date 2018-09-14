@@ -1,14 +1,15 @@
 package surf
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha1"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"os"
 	"path"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -40,23 +41,23 @@ func (f *fscache) Get(ctx context.Context, key string, dest interface{}) error {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 
-	if b, err := ioutil.ReadFile(f.cachePath(key)); err == nil {
-		var item fscacheItem
-		if err := json.Unmarshal(b, &item); err != nil {
-			return fmt.Errorf("cannot deserialize internal representation: %s", err)
-		}
-		if item.ValidTill.Before(time.Now()) {
-			os.Remove(f.cachePath(key))
-			return ErrMiss
-		}
-
-		rawValue := []byte(item.Value)
-		if err := json.Unmarshal(rawValue, &dest); err != nil {
-			return fmt.Errorf("cannot deserialize: %s", err)
-		}
-		return nil
+	b, err := ioutil.ReadFile(f.cachePath(key))
+	if err != nil {
+		return ErrMiss
 	}
-	return ErrMiss
+	var item fscacheItem
+	if err := CacheUnmarshal(b, &item); err != nil {
+		return fmt.Errorf("cannot deserialize internal representation: %s", err)
+	}
+	if item.validTill.Before(time.Now()) {
+		_ = os.Remove(f.cachePath(key))
+		return ErrMiss
+	}
+
+	if err := CacheUnmarshal(item.value, dest); err != nil {
+		return fmt.Errorf("cannot deserialize: %s", err)
+	}
+	return nil
 }
 
 func (f *fscache) Set(ctx context.Context, key string, value interface{}, exp time.Duration) error {
@@ -66,25 +67,29 @@ func (f *fscache) Set(ctx context.Context, key string, value interface{}, exp ti
 	default:
 	}
 
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+
 	return f.set(ctx, key, value, exp)
 }
 
 func (f *fscache) set(ctx context.Context, key string, value interface{}, exp time.Duration) error {
-	rawValue, err := json.MarshalIndent(value, "", "  ")
+	rawValue, err := CacheMarshal(value)
 	if err != nil {
 		return fmt.Errorf("cannot serialize: %s", err)
 	}
 
 	item := fscacheItem{
-		ValidTill: time.Now().Add(exp),
-		Value:     rawValue,
+		validTill: time.Now().Add(exp),
+		value:     rawValue,
 	}
-	b, err := json.MarshalIndent(item, "", "  ")
+	b, err := CacheMarshal(&item)
 	if err != nil {
 		return fmt.Errorf("cannot serialize internal representation: %s", err)
 	}
 
 	if err := ioutil.WriteFile(f.cachePath(key), b, 0660); err != nil {
+		_ = os.Remove(f.cachePath(key))
 		return fmt.Errorf("cannot persist: %s", err)
 	}
 	return nil
@@ -137,10 +142,10 @@ func (f *fscache) exists(key string) error {
 	}
 
 	var item fscacheItem
-	if err := json.Unmarshal(b, &item); err != nil {
+	if err := CacheUnmarshal(b, &item); err != nil {
 		return fmt.Errorf("cannot deserialize internal representation: %s", err)
 	}
-	if item.ValidTill.Before(time.Now()) {
+	if item.validTill.Before(time.Now()) {
 		os.Remove(f.cachePath(key))
 		return ErrMiss
 	}
@@ -148,6 +153,27 @@ func (f *fscache) exists(key string) error {
 }
 
 type fscacheItem struct {
-	ValidTill time.Time
-	Value     json.RawMessage
+	validTill time.Time
+	value     []byte
+}
+
+var _ CacheMarshaler = (*fscacheItem)(nil)
+
+func (it fscacheItem) MarshalCache() ([]byte, error) {
+	raw := fmt.Sprintf("%d\n%s", it.validTill.UnixNano(), it.value)
+	return []byte(raw), nil
+}
+
+func (it *fscacheItem) UnmarshalCache(raw []byte) error {
+	chunks := bytes.SplitN(raw, []byte{'\n'}, 2)
+	if len(chunks) != 2 {
+		return fmt.Errorf("invalid format: %s", raw)
+	}
+	unixNano, err := strconv.ParseInt(string(chunks[0]), 10, 64)
+	if err != nil {
+		return fmt.Errorf("invalid expiration format: %s", err)
+	}
+	it.validTill = time.Unix(0, unixNano)
+	it.value = chunks[1]
+	return nil
 }

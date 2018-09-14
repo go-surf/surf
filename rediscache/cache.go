@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha1"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"time"
 
@@ -54,14 +53,14 @@ func (r *redisCache) Get(ctx context.Context, key string, dest interface{}) erro
 		return fmt.Errorf("cannot GET: %s", err)
 	}
 
-	if err := json.Unmarshal(raw, dest); err != nil {
+	if err := surf.CacheUnmarshal(raw, dest); err != nil {
 		return fmt.Errorf("cannot deserialize value: %s", err)
 	}
 	return nil
 }
 
 func (r *redisCache) Set(ctx context.Context, key string, value interface{}, exp time.Duration) error {
-	raw, err := json.Marshal(value)
+	raw, err := surf.CacheMarshal(value)
 	if err != nil {
 		return fmt.Errorf("cannot serialize value: %s", err)
 	}
@@ -79,7 +78,7 @@ func (r *redisCache) Set(ctx context.Context, key string, value interface{}, exp
 }
 
 func (r *redisCache) SetNx(ctx context.Context, key string, value interface{}, exp time.Duration) error {
-	raw, err := json.Marshal(value)
+	raw, err := surf.CacheMarshal(value)
 	if err != nil {
 		return fmt.Errorf("cannot serialize value: %s", err)
 	}
