@@ -26,8 +26,8 @@ func TestStampedeCacheProtectionMultipleReaders(t *testing.T) {
 		start := make(chan struct{})
 
 		for i := 0; i < 100; i++ {
+			wg.Add(1)
 			go func() {
-				wg.Add(1)
 				defer wg.Done()
 
 				<-start
