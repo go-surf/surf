@@ -10,12 +10,14 @@ import (
 
 func StampedeProtect(cache CacheService) CacheService {
 	return &stampedeProtectedCache{
-		cache: cache,
+		cache:           cache,
+		computationLock: 2 * time.Second,
 	}
 }
 
 type stampedeProtectedCache struct {
-	cache CacheService
+	cache           CacheService
+	computationLock time.Duration
 }
 
 func (s *stampedeProtectedCache) Get(ctx context.Context, key string, dest interface{}) error {
@@ -26,37 +28,37 @@ readProtectedItem:
 		switch err := s.cache.Get(ctx, key, &it); err {
 		case nil:
 			// All good.
+			break readProtectedItem
 		case ErrMiss:
 			// Acquire lock for a short period to avoid multiple
 			// clients computing the same task. If we get the lock,
 			// return cache miss - we are allowed to recompute. If
 			// we don't get the lock, wait and retry until value is
 			// in cache again.
-			if s.cache.SetNx(ctx, key+":stampedelock", 1, time.Second) == nil {
+			if s.cache.SetNx(ctx, key+":stampedelock", 1, s.computationLock) == nil {
 				return ErrMiss
 			}
 			time.Sleep(25 * time.Millisecond)
-			continue readProtectedItem
 		default:
 			return err
 		}
-
-		if it.refreshAt.Before(time.Now()) {
-			// Acquire task computation lock. If we get it, return
-			// cache miss so that the client will recompute the
-			// result. Otherwise return cached value - cached value
-			// is still valid and another client is already
-			// recomputing the task.
-			if s.cache.SetNx(ctx, key+":stampedelock", 1, time.Second) == nil {
-				return ErrMiss
-			}
-		}
-
-		if err := CacheUnmarshal(it.value, dest); err != nil {
-			return fmt.Errorf("stampede protected deserialize: %s", err)
-		}
-		return nil
 	}
+
+	if it.refreshAt.Before(time.Now()) {
+		// Acquire task computation lock. If we get it, return
+		// cache miss so that the client will recompute the
+		// result. Otherwise return cached value - cached value
+		// is still valid and another client is already
+		// recomputing the task.
+		if s.cache.SetNx(ctx, key+":stampedelock", 1, s.computationLock) == nil {
+			return ErrMiss
+		}
+	}
+
+	if err := CacheUnmarshal(it.value, dest); err != nil {
+		return fmt.Errorf("stampede protected deserialize: %s", err)
+	}
+	return nil
 }
 
 func (s *stampedeProtectedCache) Set(ctx context.Context, key string, value interface{}, exp time.Duration) error {
@@ -65,12 +67,8 @@ func (s *stampedeProtectedCache) Set(ctx context.Context, key string, value inte
 		return fmt.Errorf("cannot serialize: %s", err)
 	}
 
-	refreshMargin := 5 * time.Second
-	if exp < refreshMargin {
-		refreshMargin = exp / 2
-	}
 	it := stampedeProtectedItem{
-		refreshAt: time.Now().Add(exp).Add(-refreshMargin),
+		refreshAt: time.Now().Add(exp).Add(-refreshMargin(exp)),
 		value:     rawValue,
 	}
 	return s.cache.Set(ctx, key, &it, exp)
@@ -82,22 +80,30 @@ func (s *stampedeProtectedCache) SetNx(ctx context.Context, key string, value in
 		return fmt.Errorf("cannot serialize: %s", err)
 	}
 
-	var refreshMargin time.Duration
-	if exp > 10*time.Minute {
-		refreshMargin = time.Minute
-	} else if exp > time.Minute {
-		refreshMargin = 10 * time.Second
-	} else if exp > 30*time.Second {
-		refreshMargin = 3 * time.Second
-	} else if exp > 10*time.Second {
-		refreshMargin = time.Second
-	}
-
 	it := stampedeProtectedItem{
-		refreshAt: time.Now().Add(exp).Add(-refreshMargin),
+		refreshAt: time.Now().Add(exp).Add(-refreshMargin(exp)),
 		value:     rawValue,
 	}
 	return s.cache.SetNx(ctx, key, &it, exp)
+}
+
+func refreshMargin(exp time.Duration) time.Duration {
+	if exp > 10*time.Minute {
+		return time.Minute
+	}
+	if exp > time.Minute {
+		return 10 * time.Second
+	}
+	if exp > 30*time.Second {
+		return 3 * time.Second
+	}
+	if exp > 10*time.Second {
+		return time.Second
+	}
+	if exp > 5*time.Second {
+		return 500 * time.Millisecond
+	}
+	return 0
 }
 
 func (s *stampedeProtectedCache) Del(ctx context.Context, key string) error {
