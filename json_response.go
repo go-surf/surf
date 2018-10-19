@@ -36,12 +36,12 @@ func (resp *jsonResponse) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // JSONErr write single error as JSON encoded response.
-func JSONErr(code int, errText string) {
-	JSONErrs(code, []string{errText})
+func JSONErr(code int, errText string) Response {
+	return JSONErrs(code, []string{errText})
 }
 
 // JSONErrs write multiple errors as JSON encoded response.
-func JSONErrs(code int, errs []string) {
+func JSONErrs(code int, errs []string) Response {
 	resp := struct {
 		Code   int      `json:"code"`
 		Errors []string `json:"errors"`
@@ -49,16 +49,15 @@ func JSONErrs(code int, errs []string) {
 		Code:   code,
 		Errors: errs,
 	}
-	JSONResp(code, resp)
+	return JSONResp(code, resp)
 }
 
 // StdJSONResp write JSON encoded, standard HTTP response text for given status
 // code. Depending on status, either error or successful response format is
 // used.
-func StdJSONResp(code int) {
+func StdJSONResp(code int) Response {
 	if code >= 400 {
-		JSONErr(code, http.StatusText(code))
-	} else {
-		JSONResp(code, http.StatusText(code))
+		return JSONErr(code, http.StatusText(code))
 	}
+	return JSONResp(code, http.StatusText(code))
 }
