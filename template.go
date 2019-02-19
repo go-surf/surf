@@ -15,6 +15,8 @@ import (
 	"strings"
 	"sync"
 	texttemplate "text/template"
+
+	"github.com/go-surf/surf/errors"
 )
 
 type HTMLRenderer interface {
@@ -250,14 +252,14 @@ func stackInformation(maxDepth, stackFileSurrounding int) ([]stackLine, error) {
 
 		chunks := bytes.SplitN(line, []byte(":"), 2)
 		if len(chunks) != 2 {
-			return nil, fmt.Errorf("invalid stack line format: %q", line)
+			return nil, errors.Wrap(ErrInternal, "invalid stack line format: %q", line)
 		}
 		lineNo, _ := strconv.ParseInt(string(chunks[1]), 10, 32)
 		filePath := string(chunks[0])
 
 		lines, err := fileLines(filePath, int(lineNo), stackFileSurrounding)
 		if err != nil {
-			return nil, fmt.Errorf("cannot read %q file: %s", filePath, err)
+			return nil, errors.Wrap(ErrInternal, "cannot read %q file: %s", filePath, err)
 		}
 		stackLines = append(stackLines, stackLine{
 			FilePath: filePath,
@@ -272,7 +274,7 @@ func stackInformation(maxDepth, stackFileSurrounding int) ([]stackLine, error) {
 func fileLines(filePath string, highlightLineNo, surrounding int) ([]codeLine, error) {
 	content, err := ioutil.ReadFile(filePath)
 	if err != nil {
-		return nil, fmt.Errorf("cannot read file: %s", err)
+		return nil, errors.Wrap(ErrInternal, "cannot read file: %s", err)
 	}
 
 	codeLines := make([]codeLine, 0, surrounding*2+1)
@@ -414,7 +416,7 @@ func parseTemplateParseError(err error) (string, int, string, error) {
 	rx := regexp.MustCompile(`^template: ([^:]+):(\d+):(.*)$`)
 	result := rx.FindStringSubmatch(err.Error())
 	if len(result) != 4 {
-		return "", 0, "", fmt.Errorf("cannot parse template error: %q", err)
+		return "", 0, "", errors.Wrap(ErrInternal, "cannot parse template error: %q", err)
 	}
 	fileName := string(result[1])
 	lineNo, _ := strconv.ParseInt(string(result[2]), 10, 32)

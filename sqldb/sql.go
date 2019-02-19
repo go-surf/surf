@@ -3,7 +3,9 @@ package sqldb
 import (
 	"context"
 	"database/sql"
-	"errors"
+
+	"github.com/go-surf/surf"
+	"github.com/go-surf/surf/errors"
 )
 
 type Database interface {
@@ -29,6 +31,10 @@ type Row interface {
 }
 
 var (
-	ErrNotFound   = errors.New("not found")
-	ErrConstraint = errors.New("constraint")
+	// ErrNotFound is returned when an entity cannot be found.
+	ErrNotFound = errors.Wrap(surf.ErrNotFound, "sql")
+
+	// ErrConstraint is returned when an operation cannot be completed due
+	// to declared constrained.
+	ErrConstraint = errors.Wrap(surf.ErrConstraint, "sql")
 )

@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strconv"
 	"time"
+
+	"github.com/go-surf/surf/errors"
 )
 
 func StampedeProtect(cache CacheService) CacheService {
@@ -56,7 +58,7 @@ readProtectedItem:
 	}
 
 	if err := CacheUnmarshal(it.value, dest); err != nil {
-		return fmt.Errorf("stampede protected deserialize: %s", err)
+		return errors.Wrap(err, "cannot unmarshal")
 	}
 	return nil
 }
@@ -64,7 +66,7 @@ readProtectedItem:
 func (s *stampedeProtectedCache) Set(ctx context.Context, key string, value interface{}, exp time.Duration) error {
 	rawValue, err := CacheMarshal(value)
 	if err != nil {
-		return fmt.Errorf("cannot serialize: %s", err)
+		return err
 	}
 
 	it := stampedeProtectedItem{
@@ -77,7 +79,7 @@ func (s *stampedeProtectedCache) Set(ctx context.Context, key string, value inte
 func (s *stampedeProtectedCache) SetNx(ctx context.Context, key string, value interface{}, exp time.Duration) error {
 	rawValue, err := CacheMarshal(value)
 	if err != nil {
-		return fmt.Errorf("cannot serialize: %s", err)
+		return err
 	}
 
 	it := stampedeProtectedItem{
@@ -123,11 +125,11 @@ func (it stampedeProtectedItem) MarshalCache() ([]byte, error) {
 func (it *stampedeProtectedItem) UnmarshalCache(raw []byte) error {
 	chunks := bytes.SplitN(raw, []byte{'\n'}, 2)
 	if len(chunks) != 2 {
-		return fmt.Errorf("invalid format: %s", raw)
+		return errors.Wrap(ErrCacheMalformed, "invalid format: %s", raw)
 	}
 	unixNano, err := strconv.ParseInt(string(chunks[0]), 10, 64)
 	if err != nil {
-		return fmt.Errorf("invalid expiration format: %s", err)
+		return errors.Wrap(ErrCacheMalformed, "invalid expiration format: %s", err)
 	}
 	it.refreshAt = time.Unix(0, unixNano)
 	it.value = chunks[1]

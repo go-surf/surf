@@ -28,7 +28,7 @@ func testCacheOperations(ctx context.Context, t *testing.T, c CacheService) {
 	} else if val != "abc" {
 		t.Fatalf("want abc value, got %q", val)
 	}
-	if err := c.SetNx(ctx, "key-1", "ABC", 10*time.Second); err != ErrConflict {
+	if err := c.SetNx(ctx, "key-1", "ABC", 10*time.Second); !ErrConflict.Is(err) {
 		t.Fatalf("want ErrConflict, got %+v", err)
 	}
 	if err := c.Get(ctx, "key-1", &val); err != nil {

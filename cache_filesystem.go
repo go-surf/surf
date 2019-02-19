@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/go-surf/surf/errors"
 )
 
 func NewFilesystemCache(rootDir string) CacheService {
@@ -47,7 +49,7 @@ func (f *fscache) Get(ctx context.Context, key string, dest interface{}) error {
 	}
 	var item fscacheItem
 	if err := CacheUnmarshal(b, &item); err != nil {
-		return fmt.Errorf("cannot deserialize internal representation: %s", err)
+		return errors.Wrap(err, "cannot unmarshal")
 	}
 	if item.validTill.Before(time.Now()) {
 		_ = os.Remove(f.cachePath(key))
@@ -55,7 +57,7 @@ func (f *fscache) Get(ctx context.Context, key string, dest interface{}) error {
 	}
 
 	if err := CacheUnmarshal(item.value, dest); err != nil {
-		return fmt.Errorf("cannot deserialize: %s", err)
+		return errors.Wrap(err, "cannot unmarshal")
 	}
 	return nil
 }
@@ -76,7 +78,7 @@ func (f *fscache) Set(ctx context.Context, key string, value interface{}, exp ti
 func (f *fscache) set(ctx context.Context, key string, value interface{}, exp time.Duration) error {
 	rawValue, err := CacheMarshal(value)
 	if err != nil {
-		return fmt.Errorf("cannot serialize: %s", err)
+		return errors.Wrap(err, "cannot marshal")
 	}
 
 	item := fscacheItem{
@@ -85,12 +87,12 @@ func (f *fscache) set(ctx context.Context, key string, value interface{}, exp ti
 	}
 	b, err := CacheMarshal(&item)
 	if err != nil {
-		return fmt.Errorf("cannot serialize internal representation: %s", err)
+		return errors.Wrap(err, "cannot marshal")
 	}
 
 	if err := ioutil.WriteFile(f.cachePath(key), b, 0660); err != nil {
 		_ = os.Remove(f.cachePath(key))
-		return fmt.Errorf("cannot persist: %s", err)
+		return errors.Wrap(ErrInternal, "cannot persist: %s", err)
 	}
 	return nil
 }
@@ -109,7 +111,7 @@ func (f *fscache) SetNx(ctx context.Context, key string, value interface{}, exp 
 	case ErrMiss:
 		// all good
 	case nil:
-		return ErrConflict
+		return errors.Wrap(ErrConflict, "exist")
 	default:
 		return err
 	}
@@ -143,7 +145,7 @@ func (f *fscache) exists(key string) error {
 
 	var item fscacheItem
 	if err := CacheUnmarshal(b, &item); err != nil {
-		return fmt.Errorf("cannot deserialize internal representation: %s", err)
+		return errors.Wrap(err, "cannot unmarshal")
 	}
 	if item.validTill.Before(time.Now()) {
 		os.Remove(f.cachePath(key))
@@ -167,11 +169,11 @@ func (it fscacheItem) MarshalCache() ([]byte, error) {
 func (it *fscacheItem) UnmarshalCache(raw []byte) error {
 	chunks := bytes.SplitN(raw, []byte{'\n'}, 2)
 	if len(chunks) != 2 {
-		return fmt.Errorf("invalid format: %s", raw)
+		return errors.Wrap(ErrCacheMalformed, "invalid format: %s", raw)
 	}
 	unixNano, err := strconv.ParseInt(string(chunks[0]), 10, 64)
 	if err != nil {
-		return fmt.Errorf("invalid expiration format: %s", err)
+		return errors.Wrap(ErrCacheMalformed, "invalid expiration format: %s", err)
 	}
 	it.validTill = time.Unix(0, unixNano)
 	it.value = chunks[1]

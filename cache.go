@@ -3,9 +3,10 @@ package surf
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"time"
+
+	"github.com/go-surf/surf/errors"
 )
 
 type CacheService interface {
@@ -32,11 +33,12 @@ type UnboundCacheService interface {
 
 var (
 	// ErrMiss is returned when performing operation on key is not in use.
-	ErrMiss = errors.New("cache miss")
+	// This is a not found error narrowed to cache cases only.
+	ErrMiss = errors.Wrap(ErrNotFound, "cache miss")
 
-	// ErrConflict is returned when performing operation on existing key,
-	// which cause conflict.
-	ErrConflict = errors.New("conflict")
+	// ErrCacheMalformed is returned whenever an operation cannot be
+	// completed because value cannot be serialized or deserialized.
+	ErrCacheMalformed = errors.Wrap(ErrMalformed, "cache malformed")
 )
 
 // CacheMarshal returns serialized representation of given value.
@@ -47,7 +49,11 @@ func CacheMarshal(value interface{}) ([]byte, error) {
 	if m, ok := value.(CacheMarshaler); ok {
 		return m.MarshalCache()
 	}
-	return json.Marshal(value)
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil, errors.WrapErr(ErrCacheMalformed, err)
+	}
+	return raw, nil
 
 }
 
@@ -59,7 +65,10 @@ func CacheUnmarshal(raw []byte, dest interface{}) error {
 	if m, ok := dest.(CacheMarshaler); ok {
 		return m.UnmarshalCache(raw)
 	}
-	return json.Unmarshal(raw, dest)
+	if err := json.Unmarshal(raw, dest); err != nil {
+		return errors.WrapErr(ErrCacheMalformed, err)
+	}
+	return nil
 }
 
 type CacheMarshaler interface {

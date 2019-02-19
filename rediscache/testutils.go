@@ -8,6 +8,11 @@ import (
 	"github.com/gomodule/redigo/redis"
 )
 
+// EnsureRedis creates a redis pool. Only if a pool with a successful
+// connection can be created then the test is continued. If a connection is not
+// successful test is skipped.
+// Redis connection can be set via REDIS_URL environment variable.
+// It is the clients responsibility to close the pool when no longer needed.
 func EnsureRedis(t *testing.T) *redis.Pool {
 	t.Helper()
 

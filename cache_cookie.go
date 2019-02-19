@@ -7,17 +7,18 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/binary"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"time"
+
+	"github.com/go-surf/surf/errors"
 )
 
 func NewCookieCache(prefix string, secret []byte) (UnboundCacheService, error) {
 	block, err := aes.NewCipher(adjustKeySize(secret))
 	if err != nil {
-		return nil, fmt.Errorf("cannot create cipher block: %s", err)
+		return nil, errors.Wrap(ErrInternal, "cannot create cipher block: %s", err)
 	}
 	cc := unboundCookieCache{
 		prefix: prefix,
@@ -84,7 +85,7 @@ func (s *cookieCache) Get(ctx context.Context, key string, dest interface{}) err
 			delete(s.staged, key)
 		} else {
 			if err := CacheUnmarshal(item.payload, dest); err != nil {
-				return fmt.Errorf("cannot decode staged value: %s", err)
+				return errors.Wrap(err, "cannot unmarshal")
 			}
 			return nil
 		}
@@ -101,7 +102,7 @@ func (s *cookieCache) Get(ctx context.Context, key string, dest interface{}) err
 
 	rawData, err := s.decrypt(c.Value)
 	if err != nil {
-		return ErrMiss
+		return errors.Wrap(ErrMiss, "cannot decrypt")
 	}
 
 	rawPayload := rawData[:len(rawData)-4]
@@ -109,11 +110,11 @@ func (s *cookieCache) Get(ctx context.Context, key string, dest interface{}) err
 	exp := time.Unix(int64(binary.LittleEndian.Uint32(rawExp)), 0)
 	if !exp.After(now) {
 		s.del(key)
-		return ErrMiss
+		return errors.Wrap(ErrMiss, "expired")
 	}
 
 	if err := CacheUnmarshal(rawPayload, dest); err != nil {
-		return fmt.Errorf("cannot deserialize value: %s", err)
+		return errors.Wrap(err, "cannot unmarshal")
 	}
 	return nil
 }
@@ -130,7 +131,7 @@ func (s *cookieCache) Set(ctx context.Context, key string, value interface{}, ex
 func (s *cookieCache) set(key string, value interface{}, exp time.Duration) error {
 	rawPayload, err := CacheMarshal(value)
 	if err != nil {
-		return fmt.Errorf("cannot serialize value: %s", err)
+		return errors.Wrap(err, "cannot marshal")
 	}
 
 	expAt := time.Now().Add(exp)
@@ -140,7 +141,7 @@ func (s *cookieCache) set(key string, value interface{}, exp time.Duration) erro
 	rawData := append(rawPayload, rawExp...)
 	payload, err := s.encrypt(rawData)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "cannot encrypt")
 	}
 
 	http.SetCookie(s.w, &http.Cookie{
@@ -165,7 +166,7 @@ func (s *cookieCache) encrypt(data []byte) (string, error) {
 
 	iv := cipherText[:ivSize]
 	if _, err := io.ReadFull(rand.Reader, iv); err != nil {
-		return "", err
+		return "", errors.Wrap(ErrInternal, "cannot read: %s", err)
 	}
 
 	stream := cipher.NewCFBEncrypter(s.secret, iv)
@@ -179,10 +180,10 @@ const ivSize = aes.BlockSize
 func (s *cookieCache) decrypt(payload string) ([]byte, error) {
 	raw, err := base64.URLEncoding.DecodeString(payload)
 	if err != nil {
-		return nil, errors.New("malformed data")
+		return nil, errors.WrapErr(ErrMalformed, err)
 	}
 	if len(raw) < ivSize {
-		return nil, errors.New("message too short")
+		return nil, errors.Wrap(ErrValidation, "message too short")
 	}
 
 	data := raw[ivSize:]
@@ -193,11 +194,11 @@ func (s *cookieCache) decrypt(payload string) ([]byte, error) {
 
 func (s *cookieCache) SetNx(ctx context.Context, key string, value interface{}, exp time.Duration) error {
 	if _, ok := s.staged[key]; ok {
-		return ErrConflict
+		return errors.Wrap(ErrConflict, "exists")
 	}
 	if _, err := s.r.Cookie(s.prefix + key); err == nil {
 		// TODO check if valid and not expired
-		return ErrConflict
+		return errors.Wrap(ErrConflict, "exists")
 	}
 
 	return s.set(key, value, exp)
