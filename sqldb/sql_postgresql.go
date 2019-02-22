@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 
+	"github.com/go-surf/surf/errors"
 	"github.com/lib/pq"
 )
 
@@ -88,12 +89,12 @@ func castPgErr(err error) error {
 		return ErrNotFound
 	}
 
-	if e, ok := err.(pq.Error); ok {
+	if e, ok := err.(*pq.Error); ok {
 		switch prefix := e.Code[:2]; prefix {
 		case "20":
-			return ErrNotFound
+			return errors.Wrap(ErrNotFound, e.Message)
 		case "23":
-			return ErrConstraint
+			return errors.Wrap(ErrConstraint, e.Message)
 		}
 	}
 
